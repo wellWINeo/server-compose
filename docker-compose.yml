@@ -1,0 +1,136 @@
+version: '3'
+
+networks:
+  net1:
+  net2:
+
+volumes:
+  jellyfin-cache:
+  jellyfin-config:
+  transmission-config:
+
+services:
+
+  nginx-proxy:
+    image: bunkerity/bunkerized-nginx
+    container_name: nginx-proxy
+    restart: always
+    ports:
+      - 80:8080
+      - 443:8443
+    volumes:
+      - ./web-files:/www:ro
+      - ./letsencrypt:/etc/letsencrypt
+      - ./server-confs:/server-confs:ro         # custom nginx confs at server context to make Nextcloud working
+      - ./modsec-crs-confs:/modsec-crs-confs:ro # custom Core Rule Set confs to add Nextcloud exclusions
+      - ./modsec-confs:/modsec-confs:ro         # disable some false positive
+    environment:
+      - SERVER_NAME=cloud.example.com media.example.com torren.example.com # replace with your domain
+      - MULTISITE=yes
+      - AUTO_LETS_ENCRYPT=no # turned off for local use, for www turn on
+      - CLIENT_CACHE_ETAG=on
+      - REDIRECT_HTTP_TO_HTTPS=no
+      - DISABLE_DEFAULT_SERVER=yes
+      - MAX_CLIENT_SIZE=0
+      - USE_FAIL2BAN=no
+      - USE_LIMIT_REQ=no
+      - USE_GZIP=yes
+      - USE_BROTLI=yes
+      - USE_MODSECURITY=no
+      - USE_MODSECURITY_CRS=no
+      - USE_CLAMAV_UPLOAD=no
+      - USE_CLAMAV_SCAN=no
+      - USE_CLAMAV_REMOVE=no
+      
+      - cloud.example.com_REMOTE_PHP=nextcloud
+      - cloud.example.com_REMOTE_PHP_PATH=/var/www/html
+      - cloud.example.com_LIMIT_REQ_RATE=40r/s
+      - cloud.example.com_LIMIT_REQ_BURST=60
+      - cloud.example.com_ALLOWED_METHODS=GET|POST|HEAD|PROPFIND|DELETE|PUT|MKCOL|MOVE|COPY|PROPPATCH|REPORT
+      - cloud.example.com_X_FRAME_OPTIONS=SAMEORIGIN
+      - cloud.example.com_FAIL2BAN_STATUS_CODE=400|401|403|405|444
+
+      - media.example.com_USE_REVERSE_PROXY=yes
+      - media.example.com_SERVE_FILES=no
+      - media.example.com_REVERSE_PROXY_URL=/
+      - media.example.com_REVERSE_PROXY_HOST=http://172.28.0.1:8096
+      - media.example.com_USE_LIMIT_REQ=no
+      - media.example.com_X_FRAME_OPTIONS=SAMEORIGIN
+
+      - torrent.example.com_USE_REVERSE_PROXY=yes
+      - torrent.example.com_SERVE_FILES=no
+      - torrent.example.com_REVERSE_PROXY_URL=/
+      - torrent.example.com_REVERSE_PROXY_HOST=http://transmission:9091
+      - torrent.example.com_X_FRAME_OPTIONS=SAMEORIGIN
+
+    networks:
+      - net1
+      - net2
+
+  nextcloud:
+    image: nextcloud:20-fpm
+    container_name: nextcloud
+    restart: always
+    volumes:
+      - ./web-files/cloud.example.com:/var/www/html
+    environment:
+      - MYSQL_HOST=maradb
+      - MYSQL_DATABASE=nc
+      - MYSQL_USER=user
+      - MYSQL_PASSWORD=db-user-pwd           # replace with a stronger password (must match MYSQL_PASSWORD)
+    networks:
+      - net1
+
+  mariadb:
+    image: mariadb
+    container_name: mariadb
+    command: --transaction-isolation=READ-COMMITTED --binlog-format=ROW
+    restart: always
+    volumes:
+      - ./db-data:/var/lib/mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=db-root-pwd      # replace with a stronger password
+      - MYSQL_DATABASE=nc
+      - MYSQL_USER=user                    
+      - MYSQL_PASSWORD=db-user-pwd           # replace with a stronger password (must match MYSQL_PASSWORD)
+    networks:
+      - net1
+
+  jellyfin:
+    image: jellyfin/jellyfin
+    container_name: jellyfin
+    restart: always
+    user: 1000:1000
+    group_add:
+      - 122
+    network_mode: "host"
+    volumes:
+      - jellyfin-config:/config
+      - jellyfin-cache:/cache
+      - /volume/media:/media
+    devices:
+      - /dev/dri/renderD129:/dev/dri/renderD128 # VAAPI
+      - /dev/dri/card1:/dev/dri/card0
+    environment:
+      - JELLYFIN_PublishedServerUrl=http://media.example.com
+  
+  transmission:
+    image: ghcr.io/linuxserver/transmission
+    container_name: transmission
+    restart: always
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Moscow
+      - USER=login # replace with ur login
+      - PASS=passwd # replace with ur password
+    volumes:
+      - transmission-config:/config
+      - /volume/torrent/downloads:/downloads
+      - /volume/torrent/watch:/watch
+    ports:
+      - 9091:9091
+      - 51413:51413
+      - 51413:51413/udp
+    networks:
+      - net2
