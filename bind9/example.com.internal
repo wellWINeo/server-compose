@@ -1,0 +1,30 @@
+$TTL 2d
+@	IN SOA  ns.example.com.	root.example.com. (
+	2021010401	; serial
+	3h		; refresh
+	1h		; retry
+	1w		; expiry
+	1d )		; minimum
+
+;
+; REPLACE INTERNAL IP ADDRESSES 
+; WITH CORRECT FOR YOU
+;
+
+
+; name servers - NS record
+	IN NS ns.example.com.
+
+; name servers - A record
+ns.example.com.	IN A	192.168.0.15
+
+; A records
+example.com.			IN A	192.168.0.15
+media.example.com.		IN A	192.168.0.15
+blog.example.com.		IN A 	192.168.0.15
+cloud.example.com.		IN A 	192.168.0.15
+torrent.example.com.  		IN A	192.168.0.15
+
+; CNAME records
+www.example.com.	IN CNAME	example.com
+
